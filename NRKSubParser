@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+
+from html.parser import HTMLParser
+from datetime import timedelta
+
+import sys
+
+class NRKSubParser(HTMLParser):
+    substarted = False
+    insidetag = False
+    expect_br_close = False
+    curline=""
+    curtag=""
+    entry = 1
+    def handle_starttag(self, tag, attrs):
+        #print("Encountered a start tag:", tag, attrs)
+        if self.substarted:
+            if self.insidetag:
+                if tag=="span":
+                    if dict(attrs)['style'] == "italic":
+                        self.curline += "<i>"
+                        self.curtag = "i"
+            self.insidetag = True
+            if tag == "br":
+                self.expect_br_close = True
+                if self.curline != "":
+                    self.curline += " "
+                return
+            if tag == "p":
+                attrs = dict(attrs)
+                start = attrs['begin'].split(':')
+                start = timedelta(hours=int(start[0]), minutes=int(start[1]), seconds=int(start[2].split('.')[0]), milliseconds=int(start[2].split('.')[1]))
+                end = attrs['dur'].split(':')
+                end = timedelta(hours=int(end[0]), minutes=int(end[1]), seconds=int(end[2].split('.')[0]), milliseconds=int(end[2].split('.')[1]))
+                end = end + start
+                print(str(self.entry))
+                self.entry += 1
+                print("%.2d:%.2d:%.2d,%.3d --> %.2d:%.2d:%.2d,%.3d" %( start.seconds//3600, (start.seconds//60)%60, start.seconds % 60, start.microseconds//1000, end.seconds//3600, (end.seconds//60)%60, end.seconds % 60, end.microseconds//1000))
+        if tag == "div":
+            self.substarted = True
+
+    def handle_endtag(self, tag):
+        #print("Encountered an end tag :", tag)
+        if tag == "div":
+            self.substarted = False
+        if self.substarted:
+            if tag=="span":
+                self.curline += "</"+self.curtag+">"
+                self.curtag = ""
+            if tag == "br":
+                self.expect_br_close = False
+                return
+            if self.curline.strip() != "":
+                print(self.curline)
+            if tag == "p":
+                print()
+            self.curline=""
+
+    def handle_data(self, data):
+        #print("Encountered some data  :\"%s\"" % data)
+        if self.substarted and self.insidetag:
+            if not data.rstrip() == "":
+                self.curline += data
+
+parser = NRKSubParser()
+f = open(sys.argv[1])
+parser.feed(f.read())
